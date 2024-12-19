@@ -1,0 +1,158 @@
+// App.js
+import React, { useState, useEffect } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import * as Location from 'expo-location';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import { View, Text, StyleSheet, Platform } from 'react-native';
+
+const Stack = createStackNavigator();
+
+// Main delivery tracking component
+const DeliveryTracker = () => {
+  const [location, setLocation] = useState(null);
+  const [deliveries, setDeliveries] = useState([]);
+  const [optimizedRoute, setOptimizedRoute] = useState([]);
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      // Request location permissions
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setErrorMsg('Permission to access location was denied');
+        return;
+      }
+
+      // Start location tracking
+      Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 5000,
+          distanceInterval: 10,
+        },
+        (newLocation) => {
+          setLocation(newLocation);
+          updateDriverLocation(newLocation);
+        }
+      );
+    })();
+  }, []);
+
+  // Function to update driver location in backend
+  const updateDriverLocation = async (location) => {
+    try {
+      // API call to update location in backend
+      await fetch('YOUR_API_ENDPOINT/update-location', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          timestamp: location.timestamp,
+        }),
+      });
+    } catch (error) {
+      console.error('Error updating location:', error);
+    }
+  };
+
+  // Function to optimize delivery route
+  const optimizeRoute = async (deliveryPoints) => {
+    try {
+      // API call to get optimized route
+      const response = await fetch('YOUR_API_ENDPOINT/optimize-route', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deliveryPoints,
+          currentLocation: location?.coords,
+        }),
+      });
+      
+      const optimizedRoute = await response.json();
+      setOptimizedRoute(optimizedRoute);
+    } catch (error) {
+      console.error('Error optimizing route:', error);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      {location ? (
+        <MapView
+          style={styles.map}
+          initialRegion={{
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            latitudeDelta: 0.0922,
+            longitudeDelta: 0.0421,
+          }}
+        >
+          {/* Driver marker */}
+          <Marker
+            coordinate={{
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+            }}
+            title="Current Location"
+          />
+
+          {/* Delivery points */}
+          {deliveries.map((delivery, index) => (
+            <Marker
+              key={index}
+              coordinate={{
+                latitude: delivery.latitude,
+                longitude: delivery.longitude,
+              }}
+              title={`Delivery ${index + 1}`}
+              description={delivery.address}
+            />
+          ))}
+
+          {/* Route polyline */}
+          {optimizedRoute.length > 0 && (
+            <Polyline
+              coordinates={optimizedRoute}
+              strokeColor="#000"
+              strokeWidth={3}
+            />
+          )}
+        </MapView>
+      ) : (
+        <Text>{errorMsg || 'Loading...'}</Text>
+      )}
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  map: {
+    flex: 1,
+  },
+});
+
+// Navigation handler and deep linking setup
+const App = () => {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator>
+        <Stack.Screen 
+          name="DeliveryTracker" 
+          component={DeliveryTracker}
+          options={{ title: 'Delivery Navigation' }}
+        />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+};
+
+export default App;
